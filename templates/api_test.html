@@ -11,7 +11,23 @@
         input[type="file"], select { margin-bottom: 15px; padding: 8px; width: calc(100% - 18px); border: 1px solid #ddd; border-radius: 4px; }
         input[type="submit"] { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; }
         input[type="submit"]:hover { background-color: #0056b3; }
-        .response { margin-top: 20px; padding: 15px; background-color: #f9f9f9; border: 1px solid #eee; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word; }
+        .response {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            /* The following white-space and word-wrap are good for the div itself */
+            white-space: pre-wrap; /* Wraps text like a <pre> tag but also wraps long lines */
+            word-wrap: break-word;   /* Breaks long words if they would overflow */
+            overflow-x: auto;      /* Adds scrollbar if content is still too wide */
+        }
+        /* Add this new style for the <pre> tag specifically */
+        .response pre {
+            white-space: pre-wrap;   /* Ensures <pre> content wraps */
+            word-wrap: break-word;     /* Ensures long words in <pre> wrap */
+            margin: 0;               /* Removes default <pre> margins if any */
+        }
         h1, h2 { color: #333; }
     </style>
 </head>
@@ -31,7 +47,7 @@
                     <option value="text" selected>Plain Text</option>
                     <option value="json">JSON</option>
                     <option value="markdown">Markdown (Future)</option>
-                    </select>
+                </select>
             </div>
             <input type="submit" value="Upload and Process">
         </form>
@@ -59,22 +75,18 @@
 
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
-            // The 'output_format' will be sent as a query parameter in FastAPI if defined in the path operation function
-            // Or it can be sent as part of FormData if the backend expects it that way.
-            // For FastAPI, query params are easier for simple string values.
             const outputFormat = outputFormatSelect.value;
 
             try {
-                // For FastAPI, query parameters are appended to the URL
                 const response = await fetch(`/process/document/?output_format=${outputFormat}`, {
                     method: 'POST',
                     body: formData,
-                    // 'Content-Type': 'multipart/form-data' is set automatically by FormData
                 });
 
                 const result = await response.json();
 
                 if (response.ok) {
+                    // Displaying JSON stringified content inside a <pre> tag
                     responseArea.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
                 } else {
                     responseArea.innerHTML = `<p style="color: red;">Error: ${result.detail || response.statusText}</p><pre>${JSON.stringify(result, null, 2)}</pre>`;
