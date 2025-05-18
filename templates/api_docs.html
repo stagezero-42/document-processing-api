@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .container { max-width: 800px; margin: auto; padding: 20px; }
+        h1 { color: #333; }
+        p { margin-bottom: 10px; }
+        a { color: #007bff; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Document Processing API - Documentation</h1>
+
+        <p>This is a placeholder for custom API documentation. For live, interactive API documentation (Swagger UI), please visit:
+            <a href="{{ api_docs_url if api_docs_url else '/docs' }}">{{ api_docs_url if api_docs_url else '/docs' }}</a>
+        </p>
+
+        <p>For alternative ReDoc documentation, please visit:
+            <a href="{{ api_redoc_url if api_redoc_url else '/redoc' }}">{{ api_redoc_url if api_redoc_url else '/redoc' }}</a>
+        </p>
+
+        <h2>Overview</h2>
+        <p>The Document Processing API allows users to upload documents (PDF, DOCX, scanned images) and receive extracted text and structured data.</p>
+
+        <h2>Phase 0 Endpoints</h2>
+        <ul>
+            <li><strong>GET /status</strong>: Health check. Returns the operational status of the API.</li>
+            <li><strong>POST /process/document/</strong>: Accepts a file upload for processing.
+                <ul>
+                    <li>File: `multipart/form-data`</li>
+                    <li>Query Parameter: `output_format` (e.g., 'text', 'json')</li>
+                    <li><em>Note: Full processing logic is not yet implemented in Phase 0.</em></li>
+                </ul>
+            </li>
+            <li><strong>GET /</strong>: Serves the API testing page.</li>
+        </ul>
+
+        <h2>Future Phases Will Include:</h2>
+        <ul>
+            <li>Specific processing logic for DOCX, PDF (text-based), and scanned documents (OCR).</li>
+            <li>Text cleaning and normalization.</li>
+            <li>Table extraction.</li>
+            <li>Image extraction and tagging.</li>
+            <li>Various output formats (plain text, JSON, Markdown, CSV for tables).</li>
+        </ul>
+    </div>
+</body>
+</html>
