@@ -1,123 +1,143 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse  # Keep JSONResponse
 from fastapi.templating import Jinja2Templates
-# from fastapi.staticfiles import StaticFiles # Only if you create app/static
 import shutil
 import os
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone  # Import datetime and timezone
 
 from .core.utils import get_file_extension, UPLOAD_DIRECTORY
-# from .core.config import settings
-from .processing.docx_processor import process_docx_file
-from .output_formatters.to_plain_text import format_to_plain_text
-from .output_formatters.to_json_output import format_to_json_structure
 
-# Initialize FastAPI app
+from .processing.docx_processor import process_docx_file
+# from .processing.pdf_processor import process_pdf_file # For later
+# from .processing.image_processor import process_image_file # For later
+
+from .output_formatters.to_plain_text import format_to_plain_text
+# Updated import for the JSON content formatter:
+from .output_formatters.to_json_output import format_content_for_json_schema
+
 app = FastAPI(
     title="Document Processing API",
     description="API to process PDF, DOCX, and scanned documents to text and structured data.",
-    version="0.2.0"
+    version="0.1.1"  # Incremented version
 )
 
-# Configure templates
+# ... (templates, UPLOAD_DIRECTORY check - remains the same) ...
 templates = Jinja2Templates(directory="templates")
 
-# Ensure upload directory exists
 if not os.path.exists(UPLOAD_DIRECTORY):
     os.makedirs(UPLOAD_DIRECTORY)
 
+
 @app.get("/", response_class=HTMLResponse)
+# ... (read_root remains the same) ...
 async def read_root(request: Request):
-    """
-    Serves the main API testing page.
-    """
-    context = {"request": request} # Define context
-    return templates.TemplateResponse(request=request, name="api_test.html", context=context) # Pass defined context
+    context = {"request": request}
+    return templates.TemplateResponse(request=request, name="api_test.html", context=context)
+
 
 @app.get("/status")
+# ... (get_status remains the same) ...
 async def get_status():
-    """
-    Health check endpoint.
-    """
     return {"status": "ok", "message": "API is running"}
 
+
 @app.post("/process/document/")
-async def process_document_endpoint( # Renamed from process_document to avoid conflict with any potential local var
-    request: Request,
-    file: UploadFile = File(...),
-    output_format: str = "text" # Default to text, can be "json", "markdown" etc.
-    ):
+async def process_document_endpoint(
+        request: Request,
+        file: UploadFile = File(...),
+        output_format: str = "text"
+):
     if not file:
         raise HTTPException(status_code=400, detail="No file uploaded.")
 
-    file_extension = get_file_extension(file.filename)
-    safe_filename = os.path.basename(file.filename)
-    file_path = os.path.join(UPLOAD_DIRECTORY, safe_filename)
+    original_filename = file.filename if file.filename else "unknown_file"
+    file_extension = get_file_extension(original_filename)
+
+    # Use a more unique temp filename to avoid potential collisions if many requests happen at once
+    # Though for single server, os.path.basename might be okay for a short time.
+    # temp_filename = f"{uuid.uuid4()}.{file_extension}" # Alternative using uuid
+    temp_safe_filename = os.path.basename(original_filename)  # Keeping it simple for now
+    file_path = os.path.join(UPLOAD_DIRECTORY, temp_safe_filename)
 
     processed_data: Optional[Dict[str, Any]] = None
-    final_output: Any = None
+    # final_response_data: Any = None # Will build this directly
 
     try:
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # --- Document Processing Logic ---
+        source_type = ""
         if file_extension == "docx":
             processed_data = process_docx_file(file_path)
+            source_type = "docx"
         # elif file_extension == "pdf":
-            # processed_data = process_pdf_file(file_path) # For Phase 2
+        #     processed_data = process_pdf_file(file_path) # For Phase 2
+        #     source_type = "pdf"
         # elif file_extension in ["png", "jpg", "jpeg", "tiff"]:
-            # processed_data = process_image_file(file_path) # For Phase 3
+        #     processed_data = process_image_file(file_path) # For Phase 3
+        #     source_type = "ocr" # Or derive from image type
         else:
-            raise HTTPException(status_code=400, detail=f"Unsupported file type: '{file_extension}'. Supported types: docx.")
+            raise HTTPException(status_code=400, detail=f"Unsupported file type: '{file_extension}'. Supported: docx.")
 
         if not processed_data:
-             raise HTTPException(status_code=500, detail="Processing failed to return data.")
+            raise HTTPException(status_code=500, detail="Processing failed to return data.")
 
         # --- Output Formatting ---
         if output_format == "text":
-            final_output = format_to_plain_text(processed_data)
-            # For plain text, it's usually returned directly, not as JSON
-            # Consider how you want to return plain text (e.g., PlainTextResponse)
-            # For now, wrapping it in a JSON for consistency with the example
-            return JSONResponse(content={"filename": safe_filename, "format": "text", "content": final_output})
+            plain_text_content = format_to_plain_text(processed_data)
+            # For plain text, the schema doesn't directly apply.
+            # We'll return a simpler JSON for now, or consider PlainTextResponse.
+            return JSONResponse(content={
+                "filename": original_filename,
+                "format": "text",
+                "extraction_date": datetime.now(timezone.utc).isoformat(),
+                "source_type": source_type,
+                "content": plain_text_content
+            })
         elif output_format == "json":
-            final_output = format_to_json_structure(processed_data)
-            return JSONResponse(content={"filename": safe_filename, "format": "json", "content": final_output})
-        # elif output_format == "markdown":
-        #     final_output = format_to_markdown(processed_data) # For future phase
-        else:
-            raise HTTPException(status_code=400, detail=f"Unsupported output format: '{output_format}'. Supported: text, json.")
+            content_object = format_content_for_json_schema(processed_data)
 
-    except ValueError as ve: # Catch specific errors from processors
+            final_json_response = {
+                "filename": original_filename,
+                "format": "json",
+                "extraction_date": datetime.now(timezone.utc).isoformat(),
+                "source_type": source_type,
+                "content": content_object
+            }
+            return JSONResponse(content=final_json_response)
+        else:
+            raise HTTPException(status_code=400,
+                                detail=f"Unsupported output format: '{output_format}'. Supported: text, json.")
+
+    except ValueError as ve:
         raise HTTPException(status_code=422, detail=f"Processing error: {str(ve)}")
-    except HTTPException: # Re-raise HTTPExceptions
+    except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+        # Consider more specific logging here
+        print(f"Unexpected error in process_document_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred during processing.")
     finally:
-        # Clean up the uploaded file
         if os.path.exists(file_path):
             try:
                 os.remove(file_path)
             except OSError as e:
-                # Log this error, as failure to delete a temp file can be an issue
-                print(f"Error deleting temporary file {file_path}: {e}")
+                print(f"Error deleting temporary file {file_path}: {e}")  # Log this
 
 
 @app.get("/documentation", response_class=HTMLResponse)
+# ... (custom_api_docs remains the same) ...
 async def custom_api_docs(request: Request):
-    """
-    Serves a custom API documentation page (placeholder).
-    FastAPI's /docs and /redoc are generally preferred for live API docs.
-    """
-    context = { # Context defined here
+    context = {
         "request": request,
         "api_docs_url": app.docs_url,
         "api_redoc_url": app.redoc_url
     }
-    return templates.TemplateResponse(request=request, name="api_docs.html", context=context) # Correctly passing context
+    return templates.TemplateResponse(request=request, name="api_docs.html", context=context)
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=9090, reload=True)
+
+    uvicorn.run(app, host="127.0.0.1", port=8000, reload=True)
