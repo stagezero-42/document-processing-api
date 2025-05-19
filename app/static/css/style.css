@@ -1,0 +1,271 @@
+/* General Body and Page Structure */
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    margin: 0;
+    line-height: 1.6;
+    background-color: #f4f7f6; /* Light grey background for the page */
+    color: #333; /* Default text color */
+}
+
+.container {
+    max-width: 900px; /* Consistent max-width */
+    margin: 25px auto; /* Centering with some top/bottom margin */
+    padding: 30px;
+    background-color: #ffffff; /* White background for content container */
+    border: 1px solid #d1d8e0; /* Light border */
+    border-radius: 10px; /* Rounded corners */
+    box-shadow: 0 4px 15px rgba(0,0,0,0.08); /* Subtle shadow */
+}
+
+/* Navigation Bar */
+.navbar {
+    background-color: #2c3e50; /* Dark blue-grey */
+    padding: 12px 25px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 20px; /* Added consistent margin */
+}
+
+.navbar a {
+    color: #ecf0f1; /* Light grey/white text */
+    margin: 0 18px;
+    text-decoration: none;
+    font-size: 1.05em;
+    transition: color 0.2s ease-in-out;
+}
+
+.navbar a:hover {
+    color: #3498db; /* Brighter blue on hover */
+}
+
+/* Headings */
+h1, h2, h3 {
+    color: #2c3e50; /* Dark blue-grey for headings */
+}
+
+h1 {
+    text-align: center;
+    border-bottom: 2px solid #3498db; /* Blue accent */
+    padding-bottom: 15px;
+    margin-top: 0;
+    margin-bottom: 25px;
+    font-weight: 600;
+}
+
+h2 {
+    color: #34495e; /* Slightly lighter blue-grey */
+    border-bottom: 1px solid #e0e0e0; /* Lighter separator */
+    padding-bottom: 8px;
+    margin-top: 30px;
+    margin-bottom: 15px;
+    font-size: 1.5em;
+}
+
+h3 {
+    color: #34495e;
+    margin-top: 25px;
+    font-size: 1.3em;
+}
+
+/* Text and Lists */
+p, li {
+    color: #495057; /* Dark grey for text, good contrast */
+    font-size: 1.0em;
+}
+
+ul {
+    padding-left: 20px;
+}
+
+/* Code and Preformatted Text */
+code { /* General style for inline <code> */
+    background-color: #e9ecef;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    color: #c7254e;
+}
+
+pre { /* General style for <pre> blocks */
+    background-color: #2c3e50;
+    color: #f8f9fa;
+    padding: 18px;
+    border-radius: 5px;
+    overflow-x: auto;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-size: 0.9em;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 1em 0;
+}
+
+/* Specific style for <code> elements INSIDE <pre> blocks */
+pre code {
+    background-color: transparent; /* Make background transparent to inherit from <pre> */
+    color: inherit;                /* Inherit text color from <pre> (should be light) */
+    padding: 0;                    /* Remove padding, as <pre> already has it */
+    border-radius: 0;              /* Remove border-radius if not needed */
+    /* Font family is already inherited from pre, so no need to reset unless different */
+}
+
+
+/* Form Elements (for api_test.html) */
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #495057;
+    font-size: 0.95em;
+}
+
+input[type="file"], select, input[type="number"] {
+    margin-bottom: 18px;
+    padding: 12px;
+    width: 100%;
+    border: 1px solid #ced4da;
+    border-radius: 5px;
+    box-sizing: border-box;
+    font-size: 0.95em;
+    background-color: #fdfdfe;
+}
+
+input[type="file"] {
+    background-color: #e9ecef;
+    padding: 10px;
+}
+
+input[type="checkbox"] {
+    margin-right: 8px;
+    vertical-align: middle;
+    width: auto;
+}
+
+label.inline-label {
+    display: inline-block;
+    font-weight: normal;
+    margin-bottom: 18px;
+    font-size: 0.95em;
+}
+
+input[type="submit"] {
+    background-color: #3498db;
+    color: white;
+    padding: 12px 22px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1.05em;
+    font-weight: 500;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    display: block;
+    width: 100%;
+}
+
+input[type="submit"]:hover {
+    background-color: #2980b9;
+}
+
+input[type="submit"]:active {
+    transform: scale(0.98);
+}
+
+fieldset {
+    margin-bottom: 25px;
+    padding: 20px;
+    border: 1px solid #3498db;
+    border-radius: 8px;
+    background-color: #fdfdff;
+}
+
+legend {
+    font-weight: 600;
+    color: #2980b9;
+    padding: 0 10px;
+    font-size: 1.1em;
+}
+
+/* API Response Box (for api_test.html) */
+.response {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: #2c3e50;
+    color: #f8f9fa;
+    border: 1px solid #495057;
+    border-radius: 5px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-x: auto;
+    max-height: 450px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+    font-size: 0.85em;
+}
+/* Ensure <pre> inside .response also follows .response styling if needed, but general pre should cover it */
+.response pre {
+    margin: 0; /* Reset margin for pre specifically within .response div */
+    background-color: inherit; /* Ensure it inherits the dark background */
+    color: inherit; /* Ensure it inherits the light text */
+}
+
+
+.response p {
+    color: #f8f9fa;
+    margin-top: 0;
+}
+.response p.error-message {
+    color: #e74c3c;
+    font-weight: bold;
+}
+.processing-message {
+    color: #bdc3c7;
+    font-style: italic;
+}
+
+
+/* Documentation Page Specifics (for api_docs.html) */
+table.apidocs-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 18px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 3px rgba(0,0,0,0.05);
+}
+.apidocs-table th, .apidocs-table td {
+    border: 1px solid #e0e6ed;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 0.95em;
+}
+.apidocs-table th {
+    background-color: #3498db;
+    color: white;
+    font-weight: 600;
+}
+.apidocs-table td:first-child {
+    font-weight: 500;
+}
+
+.endpoint {
+    margin-bottom: 25px;
+    padding: 20px;
+    border: 1px solid #e0e6ed;
+    border-radius: 8px;
+    background-color: #fdfdff;
+}
+
+.endpoint strong {
+    color: #2980b9;
+    font-weight: bold;
+}
+
+.note {
+    background-color: #e7f3fe;
+    border-left: 4px solid #2980b9;
+    padding: 15px;
+    margin-top: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+}
+.note p {
+    margin: 0;
+    color: #2c3e50;
+}

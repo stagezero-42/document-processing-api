@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title if page_title else "Document Processing API Test Page" }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}"> </head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('read_root') }}">API Test Page</a>
+        <a href="{{ url_for('custom_api_docs_page') }}">API Documentation</a>
+        <a href="/docs" target="_blank">Swagger UI (Auto)</a>
+        <a href="/redoc" target="_blank">ReDoc (Auto)</a>
+    </div>
+
+    <div class="container">
+        <h1>Document Processing API Test Page</h1>
+        <p style="text-align: center; margin-bottom: 25px;">Upload a document to test the processing endpoint. Adjust PDF settings if processing a PDF.</p>
+
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div>
+                <label for="file">Choose file (.docx, .pdf):</label>
+                <input type="file" id="file" name="file" required>
+            </div>
+            <div>
+                <label for="output_format">Desired Output Format:</label>
+                <select id="output_format" name="output_format">
+                    <option value="json" selected>JSON (Schema)</option>
+                    <option value="text">Plain Text</option>
+                    </select>
+            </div>
+
+            <fieldset>
+                <legend>PDF Table Extraction Settings (Optional)</legend>
+                <div>
+                    <label for="pdf_table_strategy">Table Strategy:</label>
+                    <select id="pdf_table_strategy" name="pdf_table_strategy">
+                        <option value="lines_strict" selected>Lines-based (Strict) (API Default)</option>
+                        <option value="lines">Lines-based</option>
+                        <option value="text">Text-based</option>
+                        <option value="pymupdf_default">PyMuPDF Library Default</option>
+                    </select>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label for="pdf_text_tolerance">Text Tolerance (for 'text' strategy, e.g., 3):</label>
+                    <input type="number" id="pdf_text_tolerance" name="pdf_text_tolerance" min="0" max="50" step="1" placeholder="e.g., 3 (PyMuPDF default)">
+                </div>
+                <div style="margin-top: 10px;">
+                    <input type="checkbox" id="pdf_remove_empty_rows" name="pdf_remove_empty_rows" value="true">
+                    <label for="pdf_remove_empty_rows" class="inline-label">Remove Empty Table Rows</label>
+                </div>
+            </fieldset>
+
+            <input type="submit" value="Upload and Process">
+        </form>
+
+        <h2>API Response:</h2>
+        <div id="responseArea" class="response">
+            <p>Response will appear here...</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('file');
+            const outputFormatSelect = document.getElementById('output_format');
+            const responseArea = document.getElementById('responseArea');
+
+            responseArea.innerHTML = '<p class="processing-message">Processing, please wait...</p>';
+
+            if (!fileInput.files || fileInput.files.length === 0) {
+                responseArea.innerHTML = '<p class="error-message">Please select a file.</p>';
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            const outputFormat = outputFormatSelect.value;
+
+            const pdfTableStrategy = document.getElementById('pdf_table_strategy').value;
+            const pdfTextTolerance = document.getElementById('pdf_text_tolerance').value;
+            const pdfRemoveEmptyRows = document.getElementById('pdf_remove_empty_rows').checked;
+
+            const params = new URLSearchParams();
+            params.append('output_format', outputFormat);
+
+            params.append('pdf_table_strategy', pdfTableStrategy);
+
+            if (pdfTextTolerance && pdfTextTolerance.trim() !== "") {
+                params.append('pdf_text_tolerance', pdfTextTolerance);
+            }
+            if (pdfRemoveEmptyRows) {
+                params.append('pdf_remove_empty_rows', 'true');
+            }
+
+            const queryString = params.toString();
+            const apiUrl = `/process/document/?${queryString}`;
+
+            console.log("Requesting URL:", apiUrl);
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    responseArea.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+                } else {
+                    let errorMessage = `HTTP Error ${response.status}: ${response.statusText}`;
+                    if (result && result.detail) {
+                        if (typeof result.detail === 'object') {
+                            errorMessage = `Error Details: <pre>${JSON.stringify(result.detail, null, 2)}</pre>`;
+                        } else {
+                            errorMessage = `Error: ${result.detail}`;
+                        }
+                    }
+                    responseArea.innerHTML = `<p class="error-message">${errorMessage}</p>`;
+                }
+            } catch (error) {
+                console.error('Error submitting form:', error);
+                responseArea.innerHTML = `<p class="error-message">An unexpected error occurred: ${error.message}. Check the console.</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

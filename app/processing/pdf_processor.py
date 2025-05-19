@@ -1,115 +1,112 @@
 import fitz  # PyMuPDF
 import os
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Optional
+
+INTERNAL_DEFAULT_PDF_TABLE_STRATEGY = "lines_strict"
+DEFAULT_PDF_TEXT_TOLERANCE = 3
 
 
-def process_pdf_file(file_path: str) -> Dict[str, Any]:
-    """
-    Processes a text-based PDF file to extract text with table placeholders
-    and a list of table objects.
+def process_pdf_file(file_path: str, settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if settings is None:
+        settings = {}
 
-    Args:
-        file_path (str): The path to the .pdf file.
+    # Get settings from API call, or use internal defaults for this processor
+    # The API 'main.py' now defaults pdf_table_strategy to "lines_strict"
+    # So settings.get("table_strategy") will usually be "lines_strict" if not specified by client
+    table_strategy_api_value = settings.get("table_strategy", INTERNAL_DEFAULT_PDF_TABLE_STRATEGY)
 
-    Returns:
-        Dict[str, Any]: A dictionary containing:
-                        - "text_with_placeholders": Extracted text with table placeholders.
-                        - "tables_data": A list of table objects, each with id, position,
-                                         caption (None for now), headers, and data.
-                        - "source_basename": Basename of the source file.
-    """
+    text_tolerance_setting = settings.get("text_tolerance")
+    remove_empty_rows_setting = settings.get("remove_empty_rows", False)
+
     try:
         doc = fitz.open(file_path)
-
-        text_parts: List[str] = []
+        # ... (tables_data_list, table_count_in_doc, full_page_text_with_placeholders_parts setup) ...
         tables_data_list: List[Dict[str, Any]] = []
-        table_count = 0
-
-        full_page_text_with_placeholders = []
+        table_count_in_doc = 0
+        full_page_text_with_placeholders_parts = []
 
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
+            text_blocks = page.get_text("blocks", sort=True)
 
-            # Get text blocks with coordinates: (x0, y0, x1, y1, "text", block_no, block_type)
-            # block_type = 0 for text, 1 for image
-            text_blocks = page.get_text("blocks", sort=True)  # Sort by y-coordinate then x
+            find_tables_options = {}
 
-            # Find tables on the page
-            # page.find_tables() returns a TableFinder object
-            # We can configure strategies, e.g., table_finder.settings.strategy = "lines" or "text"
-            table_finder = page.find_tables()  # Default strategy often works for simple tables
+            # Interpret the strategy from API
+            if table_strategy_api_value == "pymupdf_default":
+                # Don't pass any strategy, let PyMuPDF use its library default
+                pass
+            elif table_strategy_api_value in ["text", "lines", "lines_strict"]:
+                find_tables_options["strategy"] = table_strategy_api_value
+            else:  # Fallback to our internal default if an unexpected value somehow gets here
+                find_tables_options["strategy"] = INTERNAL_DEFAULT_PDF_TABLE_STRATEGY
 
-            page_elements = []  # To store both text blocks and table references with y-coord
+            # Apply text_tolerance only if the strategy is 'text' (or if it's generally applicable)
+            # PyMuPDF's text_tolerance is mainly for 'text' strategy but might not hurt others if set.
+            if text_tolerance_setting is not None:
+                # Ensure it's an int for PyMuPDF
+                find_tables_options["text_tolerance"] = int(text_tolerance_setting)
 
-            # Add text blocks to elements list
+            print(f"DEBUG: PyMuPDF find_tables options for page {page_num}: {find_tables_options}")
+            table_finder = page.find_tables(**find_tables_options)
+
+            # ... (rest of the PDF processing logic for elements, text, tables, and rows remains the same as before) ...
+            # ... (ensure the post-processing for remove_empty_rows is still there) ...
+            page_elements = []
             for x0, y0, x1, y1, text_content, block_no, block_type in text_blocks:
-                if block_type == 0:  # It's a text block
+                if block_type == 0:
                     page_elements.append({
-                        "type": "text",
-                        "bbox": (x0, y0, x1, y1),
-                        "content": text_content.strip(),  # Strip leading/trailing whitespace from block
-                        "y_start": y0
+                        "type": "text", "bbox": (x0, y0, x1, y1),
+                        "content": text_content.strip(), "y_start": y0
                     })
 
-            # Add table references to elements list
-            for i, fitz_table in enumerate(table_finder):
-                # fitz_table is a fitz.table.Table object
-                table_count += 1  # Global table count across pages
-                table_id = f"table{table_count:03d}"
+            current_page_table_index = 0
+            for fitz_table_obj in table_finder:
+                table_count_in_doc += 1
+                table_id = f"table{table_count_in_doc:03d}"
                 page_elements.append({
-                    "type": "table_placeholder",
-                    "bbox": fitz_table.bbox,  # (x0, y0, x1, y1) tuple
-                    "id": table_id,
-                    "fitz_table_obj": fitz_table,  # Store the object for later extraction
-                    "y_start": fitz_table.bbox[1]
+                    "type": "table_placeholder", "bbox": fitz_table_obj.bbox,
+                    "id": table_id, "fitz_table_obj": fitz_table_obj,
+                    "y_start": fitz_table_obj.bbox[1], "page_table_index": current_page_table_index
                 })
+                current_page_table_index += 1
 
-            # Sort all elements on the page by their starting y-coordinate, then x-coordinate
-            # (though get_text("blocks", sort=True) already sorts text blocks)
-            # This interleaving is crucial.
             page_elements.sort(key=lambda el: (el["y_start"], el["bbox"][0]))
 
             current_page_text_parts = []
             for element in page_elements:
                 if element["type"] == "text":
-                    if element["content"]:  # Add non-empty text blocks
+                    if element["content"]:
                         current_page_text_parts.append(element["content"])
                 elif element["type"] == "table_placeholder":
                     table_id = element["id"]
                     fitz_table_obj = element["fitz_table_obj"]
-
                     current_page_text_parts.append(f"\n[[INSERT_TABLE:{table_id}]]\n")
 
-                    # Extract table data from the fitz.table.Table object
-                    # fitz_table_obj.extract() gives list of lists (all rows)
-                    extracted_rows: List[List[str]] = fitz_table_obj.extract() or []
+                    raw_extracted_rows: List[List[str | None]] = fitz_table_obj.extract() or []
+
+                    processed_rows = [[str(cell) if cell is not None else "" for cell in r_row] for r_row in
+                                      raw_extracted_rows]
+
+                    if remove_empty_rows_setting:
+                        processed_rows = [row for row in processed_rows if any(cell.strip() for cell in row)]
 
                     table_headers: List[str] = []
-                    table_actual_data: List[List[Any]] = []  # Allow for numbers if detected
-
-                    if extracted_rows:
-                        # Assume first row is headers, convert all to string for consistency
-                        table_headers = [str(cell) if cell is not None else "" for cell in extracted_rows[0]]
-                        # Remaining rows are data, convert all to string
-                        table_actual_data = [
-                            [str(cell) if cell is not None else "" for cell in row]
-                            for row in extracted_rows[1:]
-                        ]
+                    table_actual_data: List[List[str]] = []
+                    if processed_rows:
+                        table_headers = processed_rows[0]
+                        table_actual_data = processed_rows[1:]
 
                     table_detail = {
-                        "id": table_id,
-                        "position": table_count,  # Overall position in document
-                        "caption": None,  # PDF table captions are harder to detect reliably
-                        "headers": table_headers,
-                        "data": table_actual_data,
-                        "page_number": page_num + 1  # Optional: add page number for table
+                        "id": table_id, "position": len(tables_data_list) + 1,
+                        "caption": None, "headers": table_headers, "data": table_actual_data,
+                        "page_number": page_num + 1
                     }
                     tables_data_list.append(table_detail)
 
             if current_page_text_parts:
-                full_page_text_with_placeholders.append("\n".join(current_page_text_parts))
+                full_page_text_with_placeholders_parts.append("\n".join(current_page_text_parts))
 
-        final_text = "\n\n".join(full_page_text_with_placeholders)  # Join pages with double newline
+        final_text = "\n\n".join(full_page_text_with_placeholders_parts)
         final_text = final_text.replace('\n\n\n', '\n\n').strip()
 
         return {
@@ -118,49 +115,14 @@ def process_pdf_file(file_path: str) -> Dict[str, Any]:
             "source_basename": os.path.basename(file_path)
         }
 
+    # ... (exception handling) ...
+    except fitz.fitz.FileNotFoundError as fnfe:
+        error_message = f"Error processing PDF file {file_path}: File not found. ({str(fnfe)})"
+        print(error_message)
+        raise ValueError(error_message)
     except Exception as e:
-        error_message = f"Error processing PDF file {file_path}: {str(e)}"
-        print(error_message)  # Replace with logging
+        error_message = f"Error processing PDF file {file_path}: {type(e).__name__} - {str(e)}"
+        print(error_message)
         raise ValueError(error_message)
 
-
-if __name__ == '__main__':
-    # Create a dummy PDF for testing (requires reportlab or similar, or use an existing PDF)
-    # This is a placeholder for how you might test this module directly.
-    # For actual testing, you'll use pytest with sample PDF files.
-    print("pdf_processor.py - For direct testing, please use pytest with sample PDF files.")
-    print("Example of creating a simple PDF with reportlab (if installed):")
-    print("pip install reportlab")
-    print("""
-    try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.units import inch
-    
-        c = canvas.Canvas("test_pdf_processor.pdf", pagesize=letter)
-        c.drawString(1*inch, 10*inch, "Page 1: Some text before a table.")
-    
-        # Simple table drawing (reportlab is more complex for full table structures)
-        textobject = c.beginText(1*inch, 9.5*inch)
-        textobject.textLine("Header A | Header B")
-        textobject.textLine("Data 1A  | Data 1B")
-        c.drawText(textobject)
-    
-        c.drawString(1*inch, 9*inch, "Some text after the table.")
-        c.showPage()
-        c.save()
-        print("Created test_pdf_processor.pdf")
-    
-        results = process_pdf_file("test_pdf_processor.pdf")
-        print("\\n--- TEXT ---")
-        print(results['text_with_placeholders'])
-        print("\\n--- TABLES ---")
-        for tbl in results['tables_data']:
-            print(tbl)
-        if os.path.exists("test_pdf_processor.pdf"):
-            os.remove("test_pdf_processor.pdf")
-    except ImportError:
-        print("reportlab not installed. Skipping direct PDF creation test.")
-    except Exception as e:
-        print(f"Error in __main__: {e}")
-        """)
+# Remove or comment out the __main__ block for this file if not being used for direct testing.

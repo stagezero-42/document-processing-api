@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title if page_title else "Document Processing API - Documentation" }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}"> </head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('read_root') }}">API Test Page</a>
+        <a href="{{ url_for('custom_api_docs_page') }}">API Documentation</a>
+        <a href="/docs" target="_blank">Swagger UI (Auto)</a>
+        <a href="/redoc" target="_blank">ReDoc (Auto)</a>
+    </div>
+
+    <div class="container">
+        <h1>Document Processing API Documentation</h1>
+
+        <h2>Overview</h2>
+        <p>This API allows for the extraction of text and structured table data from uploaded documents (currently supporting DOCX and text-based PDF files). The output can be requested in plain text or a structured JSON format.</p>
+        <p>This page provides a human-readable overview of the API. For interactive exploration, live testing, and detailed request/response models, please also see the auto-generated documentation linked in the navigation bar (Swagger UI and ReDoc).</p>
+
+        <h2>Base URL</h2>
+        <p>The API is hosted at the root of this server. All endpoint paths below are relative to the base URL.</p>
+
+        <h2>Endpoints</h2>
+
+        <div class="endpoint">
+            <h3>Process Document</h3>
+            <p><strong>POST</strong> <code>/process/document/</code></p>
+            <p>Uploads a document file for text and table extraction.</p>
+
+            <h4>Request Details:</h4>
+            <ul>
+                <li>Method: <code>POST</code></li>
+                <li>Content-Type: <code>multipart/form-data</code></li>
+                <li>Body Parameters:
+                    <ul>
+                        <li><code>file</code> (file, <strong>required</strong>): The document file to process (e.g., a .docx or .pdf file).</li>
+                    </ul>
+                </li>
+                <li>Query Parameters:
+                    <table class="apidocs-table"> <thead>
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Default Value</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code>output_format</code></td>
+                                <td>string</td>
+                                <td><code>json</code></td>
+                                <td>Desired output format. Available options: <code>"json"</code>, <code>"text"</code>.</td>
+                            </tr>
+                            <tr>
+                                <td colspan="4" style="text-align:center; background-color:#e9ecef; font-weight:bold;">PDF Table Extraction Settings (Optional)</td>
+                            </tr>
+                            <tr>
+                                <td><code>pdf_table_strategy</code></td>
+                                <td>string</td>
+                                <td><code>lines_strict</code></td>
+                                <td>The strategy PyMuPDF uses for finding tables.
+                                    <ul>
+                                        <li><code>lines_strict</code>: (API Default) Uses table borders; more stringent. Good for tables with clear lines.</li>
+                                        <li><code>lines</code>: Uses table borders.</li>
+                                        <li><code>text</code>: Infers tables from text alignment and spacing.</li>
+                                        <li><code>pymupdf_default</code>: Lets the PyMuPDF library use its own internal default strategy (often "lines" based).</li>
+                                    </ul>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><code>pdf_text_tolerance</code></td>
+                                <td>integer</td>
+                                <td><em>(PyMuPDF default, e.g., 3 if not set)</em></td>
+                                <td>Mainly for the <code>"text"</code> strategy. Controls how close text snippets must be to be grouped. Example range: 0-50. Higher values group more aggressively.</td>
+                            </tr>
+                            <tr>
+                                <td><code>pdf_remove_empty_rows</code></td>
+                                <td>boolean</td>
+                                <td><code>false</code></td>
+                                <td>If <code>true</code>, table rows where all cells are determined to be empty (after initial processing) will be removed from the extracted table data.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </li>
+            </ul>
+
+            <h4>Responses:</h4>
+            <ul>
+                <li><strong>200 OK:</strong> Success. Response body depends on the <code>output_format</code> parameter.
+                    <p>If <code>output_format=json</code>, the response follows the detailed "JSON Output Schema" described below.
+                    If <code>output_format=text</code>, a simpler JSON object containing the plain text and metadata is returned:
+                    <pre><code>{
+  "filename": "string",
+  "format": "text",
+  "extraction_date": "string (ISO 8601 UTC)",
+  "source_type": "string (e.g., docx, pdf)",
+  "content": "string (extracted plain text with [[INSERT_TABLE:tableXXX]] placeholders and appended table data)"
+}</code></pre>
+                    </p>
+                </li>
+                <li><strong>400 Bad Request:</strong> Invalid input, such as an unsupported file type or an invalid parameter value. The response body will contain a <code>{"detail": "error message"}</code>.</li>
+                <li><strong>422 Unprocessable Entity:</strong> Validation error, such as a missing required <code>file</code> parameter. The response body will contain detailed validation error information.</li>
+                <li><strong>500 Internal Server Error:</strong> An unexpected error occurred during document processing. The response body will contain a generic error message. Check server logs for more details.</li>
+            </ul>
+        </div>
+
+        <div class="endpoint">
+            <h3>Get API Status</h3>
+            <p><strong>GET</strong> <code>/status</code></p>
+            <p>A simple health check endpoint to verify that the API is running.</p>
+            <h4>Response (200 OK):</h4>
+            <pre><code>{
+  "status": "ok",
+  "message": "API is running"
+}</code></pre>
+        </div>
+
+        <h2>JSON Output Schema (when <code>output_format=json</code>)</h2>
+        <p>The main JSON response for successful document processing (when <code>output_format=json</code>) adheres to the following structure. This schema helps ensure consistency and provides a clear contract for consumers of the API.</p>
+        <pre><code>{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExtractedDocument",
+  "type": "object",
+  "required": ["filename", "format", "extraction_date", "source_type", "content"],
+  "properties": {
+    "filename": {
+      "type": "string",
+      "description": "Original source document filename"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["json"],
+      "description": "Format of the extracted data (will be 'json')"
+    },
+    "extraction_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 date and time of the extraction in UTC"
+    },
+    "source_type": {
+      "type": "string",
+      "description": "Detected type of the source document (e.g., 'docx', 'pdf')"
+    },
+    "content": {
+      "type": "object",
+      "required": ["extracted_text_with_placeholders", "tables"],
+      "properties": {
+        "extracted_text_with_placeholders": {
+          "type": "string",
+          "description": "Main extracted text from the document, with [[INSERT_TABLE:tableXXX]] placeholders indicating where tables were located."
+        },
+        "tables": {
+          "type": "array",
+          "description": "An array of all tables extracted from the document.",
+          "items": {
+            "type": "object",
+            "required": ["id", "position", "headers", "data"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "A unique identifier for the table within the document, e.g., 'table001', 'table002'."
+              },
+              "position": {
+                "type": "integer",
+                "description": "The 1-based sequential order in which the table appears in the document relative to other extracted tables."
+              },
+              "caption": {
+                "type": ["string", "null"],
+                "description": "The caption or title associated with the table, if detected (currently defaults to null)."
+              },
+              "headers": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "An array of strings representing the column headers of the table (typically the first row of the extracted table)."
+              },
+              "data": {
+                "type": "array",
+                "description": "The table data, represented as an array of rows. Each row is an array of cell values (strings, numbers, or nulls). This excludes the header row.",
+                "items": {
+                  "type": "array",
+                  "items": { "type": ["string", "number", "null"] }
+                }
+              },
+              "page_number": {
+                 "type": ["integer", "null"],
+                 "description": "For multi-page documents like PDF, the 1-based page number where the table was primarily found."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}</code></pre>
+        <div class="note">
+          <p><strong>Table Placeholders:</strong> The <code>extracted_text_with_placeholders</code> field will contain tags like <code>[[INSERT_TABLE:table001]]</code> where tables were located. The corresponding table data can be found by matching the <code>id</code> in the <code>tables</code> array.</p>
+        </div>
+
+        <h2>Auto-Generated API Documentation (Swagger UI & ReDoc)</h2>
+        <p>In addition to this manually written documentation, this API (since it's built with FastAPI) provides auto-generated, interactive documentation interfaces:</p>
+        <ul>
+            <li>
+                <strong><a href="/docs" target="_blank">Swagger UI (at /docs)</a>:</strong>
+                <p>Swagger UI offers a rich, interactive interface where you can:
+                    <ul>
+                        <li>View all available API endpoints, their HTTP methods, and parameters.</li>
+                        <li>See detailed information about request and response models (schemas), including data types and validation rules (derived directly from Pydantic models and type hints in the Python code).</li>
+                        <li><strong>Try out API calls directly from your browser!</strong> You can fill in parameters, upload files, and execute requests to see live responses. This is extremely useful for development, testing, and understanding how the API behaves.</li>
+                    </ul>
+                </p>
+            </li>
+            <li>
+                <strong><a href="/redoc" target="_blank">ReDoc (at /redoc)</a>:</strong>
+                <p>ReDoc provides an alternative, often cleaner and more traditional, documentation layout. It presents the API specification in a three-panel view that is excellent for reading and understanding the API structure and data models.</p>
+            </li>
+        </ul>
+        <h3>Why are these useful?</h3>
+        <p>These auto-generated documentation tools are incredibly valuable because they are:
+            <ul>
+                <li><strong>Always Up-to-Date:</strong> They are generated directly from your FastAPI application code (path operations, Pydantic models, type hints, etc.). So, as you change your API code, the documentation automatically reflects those changes.</li>
+                <li><strong>Interactive:</strong> Swagger UI allows for immediate testing and experimentation without needing a separate API client like Postman for basic calls.</li>
+                <li><strong>Standardized:</strong> They are based on the OpenAPI Specification, which is an industry standard for describing RESTful APIs.</li>
+                <li><strong>Developer-Friendly:</strong> They serve as a clear "contract" for how to interact with the API, beneficial for both frontend developers consuming the API and backend developers maintaining it.</li>
+            </ul>
+        </p>
+        <p>It's highly recommended to use these tools, especially Swagger UI's "Try it out" feature, for exploring and testing the API functionalities.</p>
+
+    </div>
+</body>
+</html>
