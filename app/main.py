@@ -1,5 +1,4 @@
 # filename: app/main.py
-# Edits are marked with # TIF UPDATE START and # TIF UPDATE END
 
 import os
 import shutil
@@ -12,9 +11,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+import fitz  # For PyMuPDF operations
+
 from .core.utils import get_file_extension
 from .core.constants import SUPPORTED_IMAGE_EXTENSIONS
-# from .core.config import settings
 
 from .processing.docx_processor import process_docx_file
 from .processing.pdf_processor import process_pdf_file
@@ -32,7 +32,7 @@ app = FastAPI(
     title="Document Processing API",
     description="API to process PDF, DOCX, and image documents to text and structured data. "
                 "<p><strong><a href='/'>Test Page</a></strong> | <strong><a href='/documentation'>API Documentation</a></strong></p>",
-    version="0.2.1"  # TIF UPDATE: Version bump
+    version="0.3.1"
 )
 
 static_content_dir = os.path.join(APP_DIR, "static")
@@ -46,6 +46,8 @@ templates = Jinja2Templates(directory=templates_dir)
 PROJECT_UPLOAD_DIRECTORY = os.path.join(PROJECT_ROOT_DIR, "temp_uploads")
 if not os.path.exists(PROJECT_UPLOAD_DIRECTORY):
     os.makedirs(PROJECT_UPLOAD_DIRECTORY)
+
+PDF_OCR_FALLBACK_MIN_TEXT_THRESHOLD = 100
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
@@ -74,18 +76,14 @@ async def process_document_endpoint(
         request: Request,
         file: UploadFile = File(...,
                                 description="The document file to process (.docx, .pdf, .png, .jpg, .jpeg, .tif, .tiff, .bmp, .webp)"),
-        # TIF UPDATE: Docs
         output_format: str = Query("json", enum=["json", "text"], description="Desired output format"),
 
-        # PDF specific settings
         pdf_table_strategy: Optional[Literal["lines_strict", "text", "lines", "pymupdf_default"]] = Query(
             "lines_strict",
             description="Strategy for PyMuPDF table finding for PDFs. 'lines_strict' is API default."
         ),
         pdf_text_tolerance: Optional[int] = Query(
-            None,
-            ge=0,
-            le=50,
+            None, ge=0, le=50,
             description="Text tolerance for PDF 'text' table strategy (e.g., 3-10)."
         ),
         pdf_remove_empty_rows: bool = Query(
@@ -93,24 +91,21 @@ async def process_document_endpoint(
             description="If true, remove empty table rows from PDF table extraction."
         ),
 
-        # OCR specific settings (for image files)
         ocr_language: Optional[str] = Query(
             "eng",
             description="OCR Language(s) for Tesseract (e.g., 'eng', 'fra', 'eng+fra')."
         ),
         ocr_page_segmentation_mode: Optional[int] = Query(
-            3,
-            ge=0, le=13,
+            3, ge=0, le=13,
             description="Tesseract Page Segmentation Mode (PSM, 0-13). Default: 3."
         ),
         ocr_engine_mode: Optional[int] = Query(
-            3,
-            ge=0, le=4,
+            3, ge=0, le=4,
             description="Tesseract OCR Engine Mode (OEM, 0-4). Default: 3 (LSTM)."
         ),
         ocr_apply_preprocessing: bool = Query(
             True,
-            description="Enable standard image preprocessing for OCR (grayscaling, binarization, deskewing). Default: true."
+            description="Enable standard image preprocessing for OCR. Default: true."
         ),
         ocr_deskew: bool = Query(
             True,
@@ -123,12 +118,21 @@ async def process_document_endpoint(
 ):
     original_filename = file.filename if file.filename else "unknown_file.tmp"
     file_extension = get_file_extension(original_filename)
-
     temp_safe_filename = os.path.basename(original_filename)
     file_path = os.path.join(PROJECT_UPLOAD_DIRECTORY, temp_safe_filename)
 
     processed_data: Optional[Dict[str, Any]] = None
-    source_type = file_extension
+    pdf_processing_method_indication: Optional[Literal["direct_text_extraction", "ocr_extraction"]] = None
+    pdf_processed_via_ocr = False
+
+    ocr_extraction_settings = {
+        "ocr_language": ocr_language,
+        "ocr_page_segmentation_mode": ocr_page_segmentation_mode,
+        "ocr_engine_mode": ocr_engine_mode,
+        "ocr_apply_preprocessing": ocr_apply_preprocessing,
+        "ocr_deskew": ocr_deskew,
+        "ocr_char_whitelist": ocr_char_whitelist,
+    }
 
     try:
         with open(file_path, "wb") as buffer:
@@ -136,26 +140,66 @@ async def process_document_endpoint(
 
         if file_extension == "docx":
             processed_data = process_docx_file(file_path)
-            source_type = "docx"
         elif file_extension == "pdf":
             pdf_extraction_settings = {
                 "table_strategy": pdf_table_strategy,
                 "text_tolerance": pdf_text_tolerance,
                 "remove_empty_rows": pdf_remove_empty_rows,
             }
-            processed_data = process_pdf_file(file_path, settings=pdf_extraction_settings)
-            source_type = "pdf"
+            direct_pdf_data = process_pdf_file(file_path, settings=pdf_extraction_settings)
+            extracted_text_direct = direct_pdf_data.get("text_with_placeholders", "")
+
+            processed_data = direct_pdf_data
+            pdf_processing_method_indication = "direct_text_extraction"
+
+            if len(extracted_text_direct.strip()) < PDF_OCR_FALLBACK_MIN_TEXT_THRESHOLD:
+                print(
+                    f"Direct text extraction for PDF '{original_filename}' yielded less than {PDF_OCR_FALLBACK_MIN_TEXT_THRESHOLD} chars. Attempting OCR fallback for first page.")
+                temp_ocr_image_path = None
+                try:
+                    pdf_doc_fitz = fitz.open(file_path)
+                    if len(pdf_doc_fitz) > 0:
+                        page_to_ocr_idx = 0
+                        page_to_ocr = pdf_doc_fitz.load_page(page_to_ocr_idx)
+
+                        base_fn, _ = os.path.splitext(temp_safe_filename)
+                        temp_ocr_image_filename = f"{base_fn}_ocr_page_{page_to_ocr_idx}.png"
+                        temp_ocr_image_path = os.path.join(PROJECT_UPLOAD_DIRECTORY, temp_ocr_image_filename)
+
+                        pix = page_to_ocr.get_pixmap(dpi=300)
+                        pix.save(temp_ocr_image_path)
+                        pdf_doc_fitz.close()
+
+                        print(
+                            f"Performing OCR on page {page_to_ocr_idx} of '{original_filename}' saved as '{temp_ocr_image_path}'.")
+                        ocr_result_data = process_image_file(temp_ocr_image_path, settings=ocr_extraction_settings)
+
+                        if ocr_result_data.get("extracted_text", "").strip():
+                            print(f"OCR fallback successful for '{original_filename}', page {page_to_ocr_idx}.")
+                            processed_data = ocr_result_data
+                            pdf_processing_method_indication = "ocr_extraction"
+                            pdf_processed_via_ocr = True
+                        else:
+                            print(
+                                f"PDF OCR fallback for '{original_filename}' (page {page_to_ocr_idx}) yielded no text. Using direct extraction results.")
+                    else:
+                        print(f"PDF OCR fallback skipped for '{original_filename}' as it has no pages.")
+                except Exception as ocr_err:
+                    print(
+                        f"PDF OCR fallback attempt failed for '{original_filename}': {type(ocr_err).__name__} - {str(ocr_err)}. Using direct PDF extraction results.")
+                    traceback.print_exc()
+                finally:
+                    if temp_ocr_image_path and os.path.exists(temp_ocr_image_path):
+                        try:
+                            os.remove(temp_ocr_image_path)
+                        except Exception as e_remove:
+                            print(f"Error removing temp OCR image {temp_ocr_image_path}: {e_remove}")
+            else:
+                print(
+                    f"Direct text extraction for PDF '{original_filename}' yielded sufficient text. Skipping OCR fallback.")
+
         elif file_extension in SUPPORTED_IMAGE_EXTENSIONS:
-            ocr_extraction_settings = {
-                "ocr_language": ocr_language,
-                "ocr_page_segmentation_mode": ocr_page_segmentation_mode,
-                "ocr_engine_mode": ocr_engine_mode,
-                "ocr_apply_preprocessing": ocr_apply_preprocessing,
-                "ocr_deskew": ocr_deskew,
-                "ocr_char_whitelist": ocr_char_whitelist,
-            }
             processed_data = process_image_file(file_path, settings=ocr_extraction_settings)
-            # source_type is already file_extension
         else:
             raise HTTPException(
                 status_code=400,
@@ -167,31 +211,36 @@ async def process_document_endpoint(
 
         current_time_utc_iso = datetime.now(timezone.utc).isoformat()
 
+        base_response_data = {
+            "filename": original_filename,
+            "format": output_format,
+            "extraction_date": current_time_utc_iso,
+            "source_type": file_extension,
+            "pdf_processing_method": pdf_processing_method_indication
+        }
+
         if output_format == "text":
-            plain_text_content = format_to_plain_text(processed_data, source_type_hint=source_type)
-            return TextResponseContent(  # type: ignore
-                filename=original_filename,
-                format="text",
-                extraction_date=current_time_utc_iso,
-                source_type=source_type,
-                content=plain_text_content
-            )
+            hint_for_text_format = file_extension
+            if file_extension == "pdf" and pdf_processed_via_ocr:
+                hint_for_text_format = "image"
+
+            plain_text_content = format_to_plain_text(processed_data, source_type_hint=hint_for_text_format)
+            text_response_payload = {**base_response_data, "content": plain_text_content}
+            return TextResponseContent(**text_response_payload)
+
         elif output_format == "json":
-            content_object_data = format_content_for_json_schema(processed_data, source_type_hint=source_type)
-
-            base_response_data = {
-                "filename": original_filename,
-                "format": "json",
-                "extraction_date": current_time_utc_iso,
-                "source_type": source_type,
-            }
-
-            if source_type in SUPPORTED_IMAGE_EXTENSIONS:
+            if file_extension == "pdf" and pdf_processed_via_ocr:
+                content_object_data = format_content_for_json_schema(processed_data, source_type_hint="image")
                 ocr_content_validated = OCRContent(**content_object_data)
-                return OCRJSONResponse(**base_response_data, content=ocr_content_validated)  # type: ignore
+                return OCRJSONResponse(**base_response_data, content=ocr_content_validated)
+            elif file_extension in SUPPORTED_IMAGE_EXTENSIONS:
+                content_object_data = format_content_for_json_schema(processed_data, source_type_hint=file_extension)
+                ocr_content_validated = OCRContent(**content_object_data)
+                return OCRJSONResponse(**base_response_data, content=ocr_content_validated)
             else:
+                content_object_data = format_content_for_json_schema(processed_data, source_type_hint=file_extension)
                 doc_content_validated = DocumentContent(**content_object_data)
-                return DocumentJSONResponse(**base_response_data, content=doc_content_validated)  # type: ignore
+                return DocumentJSONResponse(**base_response_data, content=doc_content_validated)
         else:
             raise HTTPException(
                 status_code=400,
@@ -199,7 +248,7 @@ async def process_document_endpoint(
             )
 
     except ValueError as ve:
-        print(f"Processing ValueError: {str(ve)}")
+        print(f"ValueError during processing: {str(ve)}")
         if "Tesseract OCR engine not found" in str(ve):
             raise HTTPException(status_code=501, detail=f"OCR Engine not available: {str(ve)}")
         raise HTTPException(status_code=422, detail=f"Processing error: {str(ve)}")
@@ -214,16 +263,15 @@ async def process_document_endpoint(
             try:
                 os.remove(file_path)
             except OSError as e_os:
-                print(f"Error deleting temporary file {file_path}: {str(e_os)}")
+                print(f"Error deleting main temporary file {file_path}: {str(e_os)}")
 
 
 if __name__ == "__main__":
     import uvicorn
 
     try:
-        import pandas as pd  # type: ignore
+        import pandas as pd
     except ImportError:
         print("WARNING: pandas library not found. OCR with detailed output might fail. "
               "Please install it: pip install pandas")
-
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

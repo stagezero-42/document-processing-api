@@ -10,7 +10,8 @@ class TableContent(BaseModel):
     position: int
     caption: Optional[str] = None
     headers: List[str]
-    data: List[List[Union[str, int, float, None]]] # Allow mixed types in table data
+    # Allow mixed types in table data, ensure None is also possible for cells
+    data: List[List[Union[str, int, float, None]]]
     page_number: Optional[int] = None
 
 class DocumentContent(BaseModel):
@@ -44,6 +45,8 @@ class BaseAPIResponse(BaseModel):
     format: str # "json" or "text"
     extraction_date: str # ISO 8601
     source_type: str # e.g., "docx", "pdf", "png", "jpeg"
+    # New field to indicate how a PDF was processed
+    pdf_processing_method: Optional[Literal["direct_text_extraction", "ocr_extraction"]] = None
 
 class DocumentJSONResponse(BaseAPIResponse):
     content: DocumentContent
@@ -51,9 +54,11 @@ class DocumentJSONResponse(BaseAPIResponse):
 class OCRJSONResponse(BaseAPIResponse):
     content: OCRContent
 
-class TextResponseContent(BaseModel):
+class TextResponseContent(BaseModel): # This model is simpler and might not include pdf_processing_method directly unless modified too.
+                                     # For now, focusing on JSON output.
     filename: str
     format: Literal["text"] # type: ignore
     extraction_date: str
     source_type: str
     content: str # The plain text content
+    pdf_processing_method: Optional[Literal["direct_text_extraction", "ocr_extraction"]] = None
