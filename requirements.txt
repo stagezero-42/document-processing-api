@@ -31,3 +31,8 @@ watchfiles==1.0.5
 websockets==15.0.1
 PyMuPDF
 reportlab
+pytesseract
+Pillow
+opencv-python
+numpy
+pandas

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title if page_title else "Document Processing API Test Page" }}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}"> </head>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/style.css') }}">
+</head>
 <body>
     <div class="navbar">
         <a href="{{ url_for('read_root') }}">API Test Page</a>
@@ -15,11 +16,11 @@
 
     <div class="container">
         <h1>Document Processing API Test Page</h1>
-        <p style="text-align: center; margin-bottom: 25px;">Upload a document to test the processing endpoint. Adjust PDF settings if processing a PDF.</p>
+        <p style="text-align: center; margin-bottom: 25px;">Upload a document to test the processing endpoint. Adjust PDF or OCR settings if processing a PDF or Image.</p>
 
         <form id="uploadForm" enctype="multipart/form-data">
             <div>
-                <label for="file">Choose file (.docx, .pdf):</label>
+                <label for="file">Choose file (.docx, .pdf, .png, .jpg, .jpeg, .tiff):</label>
                 <input type="file" id="file" name="file" required>
             </div>
             <div>
@@ -27,11 +28,11 @@
                 <select id="output_format" name="output_format">
                     <option value="json" selected>JSON (Schema)</option>
                     <option value="text">Plain Text</option>
-                    </select>
+                </select>
             </div>
 
             <fieldset>
-                <legend>PDF Table Extraction Settings (Optional)</legend>
+                <legend>PDF Table Extraction Settings (Optional - for PDF files)</legend>
                 <div>
                     <label for="pdf_table_strategy">Table Strategy:</label>
                     <select id="pdf_table_strategy" name="pdf_table_strategy">
@@ -48,6 +49,34 @@
                 <div style="margin-top: 10px;">
                     <input type="checkbox" id="pdf_remove_empty_rows" name="pdf_remove_empty_rows" value="true">
                     <label for="pdf_remove_empty_rows" class="inline-label">Remove Empty Table Rows</label>
+                </div>
+            </fieldset>
+
+            <fieldset>
+                <legend>OCR Settings (Optional - for Image files like PNG, JPG, TIFF)</legend>
+                <div>
+                    <label for="ocr_language">OCR Language(s) (e.g., eng, fra, eng+fra):</label>
+                    <input type="text" id="ocr_language" name="ocr_language" value="eng">
+                </div>
+                <div style="margin-top: 10px;">
+                    <label for="ocr_page_segmentation_mode">Page Segmentation Mode (PSM, 0-13):</label>
+                    <input type="number" id="ocr_page_segmentation_mode" name="ocr_page_segmentation_mode" value="3" min="0" max="13" step="1">
+                </div>
+                 <div style="margin-top: 10px;">
+                    <label for="ocr_engine_mode">OCR Engine Mode (OEM, 0-4):</label>
+                    <input type="number" id="ocr_engine_mode" name="ocr_engine_mode" value="3" min="0" max="4" step="1">
+                </div>
+                <div style="margin-top: 10px;">
+                    <input type="checkbox" id="ocr_apply_preprocessing" name="ocr_apply_preprocessing" value="true" checked>
+                    <label for="ocr_apply_preprocessing" class="inline-label">Apply Standard Image Preprocessing</label>
+                </div>
+                <div style="margin-top: 10px;">
+                    <input type="checkbox" id="ocr_deskew" name="ocr_deskew" value="true" checked>
+                    <label for="ocr_deskew" class="inline-label">Apply Image Deskewing (if preprocessing is on)</label>
+                </div>
+                <div style="margin-top: 10px;">
+                    <label for="ocr_char_whitelist">Character Whitelist (Optional):</label>
+                    <input type="text" id="ocr_char_whitelist" name="ocr_char_whitelist" placeholder="e.g., ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789">
                 </div>
             </fieldset>
 
@@ -80,20 +109,54 @@
 
             const outputFormat = outputFormatSelect.value;
 
+            // PDF Settings
             const pdfTableStrategy = document.getElementById('pdf_table_strategy').value;
             const pdfTextTolerance = document.getElementById('pdf_text_tolerance').value;
             const pdfRemoveEmptyRows = document.getElementById('pdf_remove_empty_rows').checked;
 
+            // OCR Settings
+            const ocrLanguage = document.getElementById('ocr_language').value;
+            const ocrPsm = document.getElementById('ocr_page_segmentation_mode').value;
+            const ocrOem = document.getElementById('ocr_engine_mode').value;
+            const ocrApplyPreprocessing = document.getElementById('ocr_apply_preprocessing').checked;
+            const ocrDeskew = document.getElementById('ocr_deskew').checked;
+            const ocrCharWhitelist = document.getElementById('ocr_char_whitelist').value;
+
+
             const params = new URLSearchParams();
             params.append('output_format', outputFormat);
 
+            // Append PDF settings
             params.append('pdf_table_strategy', pdfTableStrategy);
-
             if (pdfTextTolerance && pdfTextTolerance.trim() !== "") {
                 params.append('pdf_text_tolerance', pdfTextTolerance);
             }
             if (pdfRemoveEmptyRows) {
                 params.append('pdf_remove_empty_rows', 'true');
+            }
+
+            // Append OCR settings
+            if (ocrLanguage && ocrLanguage.trim() !== "") {
+                params.append('ocr_language', ocrLanguage);
+            }
+            if (ocrPsm && ocrPsm.trim() !== "") {
+                params.append('ocr_page_segmentation_mode', ocrPsm);
+            }
+            if (ocrOem && ocrOem.trim() !== "") {
+                params.append('ocr_engine_mode', ocrOem);
+            }
+            if (ocrApplyPreprocessing) { // Send true if checked
+                params.append('ocr_apply_preprocessing', 'true');
+            } else {
+                 params.append('ocr_apply_preprocessing', 'false'); // Explicitly send false
+            }
+            if (ocrDeskew) { // Send true if checked
+                params.append('ocr_deskew', 'true');
+            } else {
+                params.append('ocr_deskew', 'false'); // Explicitly send false
+            }
+            if (ocrCharWhitelist && ocrCharWhitelist.trim() !== "") {
+                params.append('ocr_char_whitelist', ocrCharWhitelist);
             }
 
             const queryString = params.toString();
@@ -107,7 +170,7 @@
                     body: formData,
                 });
 
-                const result = await response.json();
+                const result = await response.json(); // Always expect JSON, even for text output (wrapper)
 
                 if (response.ok) {
                     responseArea.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
